@@ -82,6 +82,8 @@ function RoleVote.Start(length, current, limit, prefix, fn)
 		net.WriteUInt(winner, ROLE_BITS)
 		net.Broadcast()
 
+		hook.Run("TTT2RoleVoteWinner", winner)
+
 		timer.Simple(4, function()
 			hook.Run("RoleVoteChange", winner)
 
