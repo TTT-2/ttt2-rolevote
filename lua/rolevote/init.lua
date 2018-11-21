@@ -30,7 +30,7 @@ function RoleVote.Start(length, current, limit, prefix, fn)
 			vote_roles[#vote_roles + 1] = role.index
 			amt = amt + 1
 
-			if limit and amt >= limit then break end
+			if limit and amt + 2 >= limit then break end -- +2 bcus of none and random option
 		end
 	end
 
@@ -74,6 +74,17 @@ function RoleVote.Start(length, current, limit, prefix, fn)
 
 		local winner = table.GetWinningKey(role_results) or 1
 
+		-- random role
+		if winner == 3 then
+			for _, role in RandomPairs(GetRoles()) do
+				if IsRoleSelectable(role, true) and role ~= INNOCENT and role ~= TRAITOR then
+					winner = role.index
+
+					break
+				end
+			end
+		end
+
 		RoleVote.DisabledRoles = {}
 		RoleVote.Winner = winner
 
@@ -96,9 +107,11 @@ end
 
 hook.Add("TTT2RoleNotSelectable", "TTT2RoleVoteModifyRoleSelect", function(roleData)
 	if rolevote_enabled:GetBool() and RoleVote.Winner then
-		local rd = GetRoleByIndex(RoleVote.Winner)
+		if RoleVote.Winner == 4 then
+			return true
+		end
 
-		if rd and rd ~= roleData then
+		if RoleVote.Winner ~= roleData.index then
 			return true
 		end
 	end
@@ -111,7 +124,7 @@ net.Receive("TTT2RoleVoteUpdate", function(len, ply)
 		if update_type == RoleVote.UPDATE_VOTE then
 			local role = net.ReadUInt(ROLE_BITS)
 
-			if table.HasValue(RoleVote.CurrentRoles, role) then
+			if table.HasValue(RoleVote.CurrentRoles, role) or role == 3 or role == 4 then
 				RoleVote.Votes[ply:SteamID64()] = role
 
 				net.Start("TTT2RoleVoteUpdate")
