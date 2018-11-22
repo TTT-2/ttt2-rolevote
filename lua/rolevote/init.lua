@@ -6,64 +6,88 @@ util.AddNetworkString("TTT2RoleVoteCancel")
 util.AddNetworkString("TTT2RTV_Delay")
 
 local rolevote_enabled = CreateConVar("ttt2_rolevote_enabled", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
+local rolevote_votes = CreateConVar("ttt2_rolevote_votes", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 local lastrole = CreateConVar("ttt2_rolevote_lastrole", "0", {FCVAR_ARCHIVE})
 
 hook.Add("TTTUlxInitRWCVar", "TTT2RoleVoteInitRWCVar", function(name)
 	ULib.replicatedWritableCvar("ttt2_rolevote_enabled", "rep_ttt2_rolevote_enabled", rolevote_enabled:GetInt(), true, false, name)
+	ULib.replicatedWritableCvar("ttt2_rolevote_votes", "rep_ttt2_rolevote_votes", rolevote_votes:GetInt(), true, false, name)
 end)
 
 RoleVote.Continued = false
 
-function RoleVote.EndTimer()
+function RoleVote.EndTimer(mapvote)
 	RoleVote.Allow = false
 
 	local role_results = {}
-	local plys = player.GetAll()
 
-	for k, v in pairs(RoleVote.Votes) do
-		if not role_results[v] then
-			role_results[v] = 0
-		end
+	for ply, votes in pairs(RoleVote.Votes) do
+		if IsValid(ply) then
+			local votePower = RoleVote.HasExtraVotePower(ply)
 
-		for _, v2 in ipairs(plys) do
-			if v2:SteamID64() == k then
-				if RoleVote.HasExtraVotePower(v2) then
-					role_results[v] = role_results[v] + 2
+			for _, v in ipairs(votes) do
+				if votePower then
+					role_results[v] = (role_results[v] or 0) + 2
 				else
-					role_results[v] = role_results[v] + 1
+					role_results[v] = (role_results[v] or 0) + 1
 				end
-			end
-		end
-	end
-
-	local winner = table.GetWinningKey(role_results) or 3
-
-	-- random role
-	if winner == 3 then
-		for _, role in RandomPairs(GetRoles()) do
-			if IsRoleSelectable(role, true) and role ~= INNOCENT and role ~= TRAITOR then
-				winner = role.index
-
-				break
 			end
 		end
 	end
 
 	RoleVote.DisabledRoles = {}
 
-	RunConsoleCommand("ttt2_rolevote_lastrole", winner == 4 and "none" or GetRoleByIndex(winner).name)
+	local winners = {}
+	local sorted = {}
+
+	table.sort(role_results, function(a, b)
+		return a > b
+	end)
+
+	local count = 0
+
+	for role, amount in pairs(role_results) do
+		sorted[#sorted + 1] = role
+		count = count + 1
+
+		if count == RoleVote.MaxVotes then break end
+	end
+
+	for i = 1, RoleVote.MaxVotes do
+		local winner = sorted[i] or 3
+
+		-- random role
+		if winner == 3 then
+			for _, role in RandomPairs(GetRoles()) do
+				if IsRoleSelectable(role, true) and role ~= INNOCENT and role ~= TRAITOR then
+					winner = role.index
+
+					break
+				end
+			end
+		end
+
+		winners[#winners + 1] = winner
+	end
+
+	SetLastRoles(winners)
 
 	net.Start("TTT2RoleVoteUpdate")
 	net.WriteUInt(RoleVote.UPDATE_WIN, 3)
-	net.WriteUInt(winner, ROLE_BITS)
+	net.WriteUInt(#winners, ROLE_BITS)
+
+	for i = 1, #winners do
+		net.WriteUInt(winners[i], ROLE_BITS)
+	end
+
 	net.Broadcast()
 
-	hook.Run("TTT2RoleVoteWinner", winner)
+	hook.Run("TTT2RoleVoteWinners", winners)
 
 	timer.Simple(3, function()
-		hook.Run("RoleVoteChange", winner)
+		hook.Run("RoleVoteChange", winners)
 
-		if RoleVote.MapVote and MapVote and MapVote.Start then
+		if mapvote and MapVote and MapVote.Start then
 			MapVote.Start(nil, nil, nil, nil)
 		end
 	end)
@@ -79,15 +103,17 @@ function RoleVote.Start(length, current, limit, prefix, mapvote)
 	local vote_roles = {}
 	local vote_roles2 = {}
 	local amt = 0
-	local ply_count = 0
+
+	RoleVote.Voter = {}
 
 	for _, v in ipairs(player.GetAll()) do
-
 		-- everyone on the spec team is in specmode
-		if IsValid(v) and not v:GetForceSpec() then
-			ply_count = ply_count + 1
+		if IsValid(v) and not v:GetForceSpec() then -- and not v:IsBot()
+			RoleVote.Voter[#RoleVote.Voter + 1] = v
 		end
 	end
+
+	local ply_count = #RoleVote.Voter
 
 	for _, role in RandomPairs(roles) do
 		if role ~= INNOCENT and role ~= TRAITOR and IsRoleSelectable(role, true) then
@@ -106,24 +132,87 @@ function RoleVote.Start(length, current, limit, prefix, mapvote)
 
 	if #vote_roles < 1 then return end
 
+	RoleVote.MaxVotes = rolevote_votes:GetInt()
+
 	net.Start("TTT2RoleVoteStart")
-	net.WriteUInt(amt, 32)
+	net.WriteUInt(amt, ROLE_BITS)
 
 	for i = 1, amt do
 		net.WriteUInt(vote_roles2[i], ROLE_BITS)
 	end
 
 	net.WriteUInt(length, 32)
+	net.WriteUInt(RoleVote.MaxVotes, ROLE_BITS)
 	net.Broadcast()
 
 	RoleVote.Allow = true
 	RoleVote.CurrentRoles = vote_roles
 	RoleVote.Votes = {}
-	RoleVote.MapVote = mapvote
 
 	timer.Create("TTT2RoleVote", length, 1, function()
-		RoleVote.EndTimer()
+		RoleVote.EndTimer(mapvote)
 	end)
+end
+
+net.Receive("TTT2RoleVoteUpdate", function(len, ply)
+	if RoleVote.Allow and IsValid(ply) then
+		local update_type = net.ReadUInt(3)
+
+		if update_type == RoleVote.UPDATE_VOTE then
+			local role = net.ReadUInt(ROLE_BITS)
+
+			if table.HasValue(RoleVote.CurrentRoles, role) or role == 3 or role == 4 or role == 5 then
+				if role ~= 5 then
+					if RoleVote.MaxVotes == 1 then
+						RoleVote.Votes[ply] = {role}
+					else
+						RoleVote.Votes[ply] = RoleVote.Votes[ply] or {}
+
+						-- dont vote NONE if there are other roles already selected
+						if role == 4 and #RoleVote.Votes[ply] > 1 then return end
+
+						-- dont vote other roles if none is selected
+						if role ~= 4 and RoleVote.Votes[ply][1] == 4 then return end
+
+						local key
+
+						for k, v in ipairs(RoleVote.Votes[ply]) do
+							if v == role then
+								key = k
+
+								break
+							end
+						end
+
+						if not key then
+							RoleVote.Votes[ply][#RoleVote.Votes[ply] + 1] = role
+						else
+							table.remove(RoleVote.Votes[ply], key)
+						end
+					end
+				else
+					RoleVote.Votes[ply] = nil
+				end
+
+				net.Start("TTT2RoleVoteUpdate")
+				net.WriteUInt(RoleVote.UPDATE_VOTE, 3)
+				net.WriteEntity(ply)
+				net.WriteUInt(role, ROLE_BITS)
+				net.Broadcast()
+			end
+		end
+	end
+end)
+
+function RoleVote.Cancel()
+	if RoleVote.Allow then
+		RoleVote.Allow = false
+
+		net.Start("TTT2RoleVoteCancel")
+		net.Broadcast()
+
+		timer.Remove("TTT2RoleVote")
+	end
 end
 
 hook.Add("TTT2RoleNotSelectable", "TTT2RoleVoteModifyRoleSelect", function(roleData)
@@ -154,39 +243,32 @@ hook.Add("TTT2RoleNotSelectable", "TTT2RoleVoteModifyRoleSelect", function(roleD
 	end
 end)
 
-net.Receive("TTT2RoleVoteUpdate", function(len, ply)
-	if RoleVote.Allow and IsValid(ply) then
-		local update_type = net.ReadUInt(3)
+function GetLastRoles()
+	local unpacked = {}
 
-		if update_type == RoleVote.UPDATE_VOTE then
-			local role = net.ReadUInt(ROLE_BITS)
-
-			if table.HasValue(RoleVote.CurrentRoles, role) or role == 3 or role == 4 then
-				RoleVote.Votes[ply:SteamID64()] = role
-
-				net.Start("TTT2RoleVoteUpdate")
-				net.WriteUInt(RoleVote.UPDATE_VOTE, 3)
-				net.WriteEntity(ply)
-				net.WriteUInt(role, ROLE_BITS)
-				net.Broadcast()
-			end
-		end
+	for _, roleName in ipairs(string.Explode(",", lastrole:GetString())) do
+		unpacked[#unpacked + 1] = roleName == "none" and 4 or GetRoleByName(roleName).index
 	end
-end)
+
+	return unpacked
+end
+
+function SetLastRoles(lastroles)
+	local packed = ""
+
+	for k, role in ipairs(lastroles) do
+		if k ~= 1 then
+			packed = packed .. ","
+		end
+
+		packed = packed .. (role == 4 and "none" or GetRoleByIndex(role).name)
+	end
+
+	RunConsoleCommand("ttt2_rolevote_lastrole", packed)
+end
 
 if file.Exists("RoleVote/config.txt", "DATA") then
 	RoleVote.Config = util.JSONToTable(file.Read("RoleVote/config.txt", "DATA"))
 else
 	RoleVote.Config = {}
-end
-
-function RoleVote.Cancel()
-	if RoleVote.Allow then
-		RoleVote.Allow = false
-
-		net.Start("TTT2RoleVoteCancel")
-		net.Broadcast()
-
-		timer.Remove("TTT2RoleVote")
-	end
 end

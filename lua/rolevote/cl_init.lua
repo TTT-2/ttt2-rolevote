@@ -11,7 +11,7 @@ net.Receive("TTT2RoleVoteStart", function()
 	RoleVote.Allow = true
 	RoleVote.Votes = {}
 
-	local amt = net.ReadUInt(32)
+	local amt = net.ReadUInt(ROLE_BITS)
 
 	for i = 1, amt do
 		local role = net.ReadUInt(ROLE_BITS)
@@ -20,13 +20,22 @@ net.Receive("TTT2RoleVoteStart", function()
 	end
 
 	RoleVote.EndTime = CurTime() + net.ReadUInt(32)
+	RoleVote.MaxVotes = net.ReadUInt(ROLE_BITS)
 
 	if IsValid(RoleVote.Panel) then
 		RoleVote.Panel:Remove()
 	end
 
+	RoleVote.Voter = {}
+
+	for _, v in ipairs(player.GetAll()) do
+		-- everyone on the spec team is in specmode
+		if IsValid(v) and not v:GetForceSpec() then
+			RoleVote.Voter[#RoleVote.Voter + 1] = v
+		end
+	end
+
 	RoleVote.Panel = vgui.Create("RoleVoteScreen")
-	RoleVote.Panel:SetRoles(RoleVote.CurrentRoles)
 end)
 
 net.Receive("TTT2RoleVoteUpdate", function()
@@ -37,16 +46,91 @@ net.Receive("TTT2RoleVoteUpdate", function()
 
 		if IsValid(ply) then
 			local role = net.ReadUInt(ROLE_BITS)
+			local panel = RoleVote.Panel
 
-			RoleVote.Votes[ply:SteamID64()] = role
+			if not IsValid(panel) then return end
 
-			if IsValid(RoleVote.Panel) then
-				RoleVote.Panel:AddVoter(ply)
+			if role == 5 then
+				panel:UnvoteAll(ply)
+			else
+				RoleVote.Votes[ply] = RoleVote.Votes[ply] or {}
+
+				local key
+
+				for k, v in ipairs(RoleVote.Votes[ply]) do
+					if v == role then
+						key = k
+
+						break
+					end
+				end
+
+				local icon_container = panel:GetPlayerIcon(ply, role)
+				if icon_container then
+					if not key then -- new selection
+						if icon_container.Role ~= 5 then -- used icon that was already selected
+							for k, v in ipairs(RoleVote.Votes[ply]) do
+								if v == icon_container.Role then
+									table.remove(RoleVote.Votes[ply], k)
+
+									break
+								end
+							end
+						end
+
+						RoleVote.Votes[ply][#RoleVote.Votes[ply] + 1] = role
+
+						icon_container.Role = role
+					else -- select same
+						table.remove(RoleVote.Votes[ply], key)
+
+						icon_container.Role = 5
+					end
+				end
+			end
+
+			if RoleVote.MaxVotes > 1 then
+				if role ~= 4 then
+					if #RoleVote.Votes[ply] > 0 then
+						local noneButton = panel:GetRoleButton(4)
+
+						if IsValid(noneButton) then
+							noneButton.disabled = true
+						end
+					else
+						for _, v in pairs(panel.roleList:GetItems()) do
+							if v.ID ~= 5 and (v.ID == 3 or v.ID == 4 or not v.minPlayers or #RoleVote.Voter >= v.minPlayers) then
+								v.disabled = false
+							end
+						end
+					end
+				else
+					if #RoleVote.Votes[ply] == 1 then -- just 4 cached
+						for _, v in pairs(panel.roleList:GetItems()) do
+							if v.ID ~= 4 and v.ID ~= 5 then
+								v.disabled = true
+							end
+						end
+					else
+						for _, v in pairs(panel.roleList:GetItems()) do
+							if v.ID ~= 4 and v.ID ~= 5 and (v.ID == 3 or not v.minPlayers or #RoleVote.Voter >= v.minPlayers) then
+								v.disabled = false
+							end
+						end
+					end
+				end
 			end
 		end
 	elseif update_type == RoleVote.UPDATE_WIN then
 		if IsValid(RoleVote.Panel) then
-			RoleVote.Panel:Flash(net.ReadUInt(ROLE_BITS))
+			local role_amount = net.ReadUInt(ROLE_BITS)
+			local roles = {}
+
+			for i = 1, role_amount do
+				roles[#roles + 1] = net.ReadUInt(ROLE_BITS)
+			end
+
+			RoleVote.Panel:Flash(roles)
 		end
 	end
 end)
@@ -111,6 +195,8 @@ function PANEL:Init()
 	end
 
 	self.Voters = {}
+	self:InitVoter(RoleVote.Voter, RoleVote.MaxVotes)
+	self:SetRoles(RoleVote.CurrentRoles, #RoleVote.Voter)
 end
 
 function PANEL:PerformLayout()
@@ -147,81 +233,88 @@ end
 
 local star_mat = Material("icon16/star.png")
 
-function PANEL:AddVoter(voter)
-	for _, v in pairs(self.Voters) do
-		if v.Player and v.Player == voter then
-			return false
+function PANEL:InitVoter(voters, amount)
+	for _, voter in ipairs(voters) do
+		self.Voters[voter] = self.Voters[voter] or {}
+
+		for i = 1, amount do
+			local icon_container = vgui.Create("Panel", self.roleList:GetCanvas())
+			icon_container.Role = 5
+
+			local icon = vgui.Create("AvatarImage", icon_container)
+			icon:SetSize(16, 16)
+			icon:SetZPos(1000)
+			icon:SetTooltip(voter:Name())
+
+			icon_container:SetTooltip(voter:Name())
+
+			icon:SetPlayer(voter, 16)
+
+			if RoleVote.HasExtraVotePower(voter) then
+				icon_container:SetSize(40, 20)
+
+				icon:SetPos(21, 2)
+
+				icon_container.img = star_mat
+			else
+				icon_container:SetSize(20, 20)
+
+				icon:SetPos(2, 2)
+			end
+
+			icon_container.Paint = function(s, w, h)
+				draw.RoundedBox(4, 0, 0, w, h, Color(255, 0, 0, 80))
+
+				if icon_container.img then
+					surface.SetMaterial(icon_container.img)
+					surface.SetDrawColor(Color(255, 255, 255))
+					surface.DrawTexturedRect(2, 2, 16, 16)
+				end
+			end
+
+			icon_container:SetZPos(1000)
+
+			self.Voters[voter][#self.Voters[voter] + 1] = icon_container
 		end
 	end
-
-	local icon_container = vgui.Create("Panel", self.roleList:GetCanvas())
-
-	local icon = vgui.Create("AvatarImage", icon_container)
-	icon:SetSize(16, 16)
-	icon:SetZPos(1000)
-	icon:SetTooltip(voter:Name())
-
-	icon_container.Player = voter
-
-	icon_container:SetTooltip(voter:Name())
-
-	icon:SetPlayer(voter, 16)
-
-	if RoleVote.HasExtraVotePower(voter) then
-		icon_container:SetSize(40, 20)
-
-		icon:SetPos(21, 2)
-
-		icon_container.img = star_mat
-	else
-		icon_container:SetSize(20, 20)
-
-		icon:SetPos(2, 2)
-	end
-
-	icon_container.Paint = function(s, w, h)
-		draw.RoundedBox(4, 0, 0, w, h, Color(255, 0, 0, 80))
-
-		if icon_container.img then
-			surface.SetMaterial(icon_container.img)
-			surface.SetDrawColor(Color(255, 255, 255))
-			surface.DrawTexturedRect(2, 2, 16, 16)
-		end
-	end
-
-	table.insert(self.Voters, icon_container)
 end
 
 function PANEL:Think()
-	for _, v in pairs(self.roleList:GetItems()) do
-		v.NumVotes = 0
+	for _, bar in pairs(self.roleList:GetItems()) do
+		bar.NumVotes = 0
 	end
 
-	for _, v in pairs(self.Voters) do
-		if not IsValid(v.Player) then
-			v:Remove()
-		else
-			if not RoleVote.Votes[v.Player:SteamID64()] then
-				v:Remove()
+	for voter, tbl in pairs(self.Voters) do
+		for _, icon_container in ipairs(tbl) do
+			if not IsValid(voter) then
+				icon_container:Remove()
 			else
-				local bar = self:GetMapButton(RoleVote.Votes[v.Player:SteamID64()])
-
-				if RoleVote.HasExtraVotePower(v.Player) then
-					bar.NumVotes = bar.NumVotes + 2
+				if not icon_container.Role then
+					icon_container:Remove()
 				else
-					bar.NumVotes = bar.NumVotes + 1
-				end
+					local bar = self:GetRoleButton(icon_container.Role)
 
-				if IsValid(bar) then
-					local NewPos = Vector((bar.x + bar:GetWide()) - 21 * bar.NumVotes - 2, bar.y + (bar:GetTall() * 0.5 - 10), 0)
+					if IsValid(bar) then
+						if RoleVote.HasExtraVotePower(voter) then
+							bar.NumVotes = bar.NumVotes + 2
+						else
+							bar.NumVotes = bar.NumVotes + 1
+						end
 
-					if not v.CurPos or v.CurPos ~= NewPos then
-						v:MoveTo(NewPos.x, NewPos.y, 0.3)
+						local NewPos = Vector((bar.x + bar:GetWide()) - 21 * bar.NumVotes - 2, bar.y + (bar:GetTall() * 0.5 - 10), 0)
 
-						v.CurPos = NewPos
+						if not icon_container.CurPos or icon_container.CurPos ~= NewPos then
+							icon_container:MoveTo(NewPos.x, NewPos.y, 0.3)
+
+							icon_container.CurPos = NewPos
+						end
 					end
 				end
 			end
+		end
+
+		if not IsValid(voter) then
+			self.Voters[voter] = nil
 		end
 	end
 
@@ -232,18 +325,8 @@ function PANEL:Think()
 	self.countDown:CenterHorizontal()
 end
 
-function PANEL:SetRoles(roles)
+function PANEL:SetRoles(roles, ply_count)
 	self.roleList:Clear()
-
-	local ply_count = 0
-
-	for _, v in ipairs(player.GetAll()) do
-
-		-- everyone on the spec team is in specmode
-		if IsValid(v) and not v:GetForceSpec() then
-			ply_count = ply_count + 1
-		end
-	end
 
 	local tmpTbl = {}
 
@@ -253,34 +336,38 @@ function PANEL:SetRoles(roles)
 
 	tmpTbl[#tmpTbl + 1] = 3 -- random
 	tmpTbl[#tmpTbl + 1] = 4 -- none
+	tmpTbl[#tmpTbl + 1] = 5 -- unvoted
 
 	for _, role in ipairs(tmpTbl) do
 		local button = vgui.Create("DButton", self.roleList)
 		button.ID = role
 
-		if role == 3 or role == 4 then
-			if role == 3 then
-				button.title = "Random"
-			else
-				button.title = "None"
-			end
-
+		if role == 3 or role == 4 or role == 5 then
 			local tmpCol = Color(150, 150, 150, 255)
 
 			button.color = tmpCol
 			button.bgColor = tmpCol
+			button.mainColor = Color(255, 255, 255, 255)
+
+			if role == 3 then
+				button.title = "Random"
+			elseif role == 4 then
+				button.title = "None"
+			else
+				button.title = "Unvoted"
+				button.mainColor = button.color
+			end
 		else
 			local rd = GetRoleByIndex(role)
 
 			button.bgColor = table.Copy(rd.color)
 			button.color = table.Copy(rd.color)
 			button.dkColor = table.Copy(rd.dkcolor)
+			button.mainColor = Color(255, 255, 255, 255)
 			button.icon = "vgui/ttt/sprite_" .. rd.abbr
 			button.minPlayers = GetConVar("rep_ttt_" .. rd.name .. "_min_players"):GetInt()
 			button.title = LANG.GetTranslation(rd.name)
 		end
-
-		button.mainColor = Color(255, 255, 255, 255)
 
 		if button.minPlayers and ply_count < button.minPlayers then
 			button.disabled = true
@@ -298,7 +385,7 @@ function PANEL:SetRoles(roles)
 		do
 			local Paint = button.Paint
 			button.Paint = function(s, w, h)
-				local col = button.color
+				local col = s.color
 				local col2
 
 				if s.disabled then
@@ -335,9 +422,9 @@ function PANEL:SetRoles(roles)
 					end
 				end
 
-				if s.disabled then
+				if s.minPlayers and ply_count < s.minPlayers then
 					-- draw player amount
-					draw.DrawText(ply_count .. " / " .. s.minPlayers .. " Players", "TTT2VoteFontNeed", s:GetWide() - 21, 10, Color(255, 255, 255, 255), TEXT_ALIGN_RIGHT)
+					draw.DrawText(ply_count .. " / " .. s.minPlayers .. " Players", "TTT2VoteFontNeed", s:GetWide() - 21, 13, Color(255, 255, 255, 255), TEXT_ALIGN_RIGHT)
 				end
 
 				Paint(s, w, h)
@@ -363,7 +450,62 @@ function PANEL:SetRoles(roles)
 	end
 end
 
-function PANEL:GetMapButton(role)
+function PANEL:UnvoteAll(ply)
+	for voter, tbl in pairs(self.Voters) do
+		if not ply or ply == voter then
+			for _, icon_container in ipairs(tbl) do
+				if IsValid(voter) then
+					RoleVote.Votes[voter] = {}
+
+					if IsValid(RoleVote.Panel) then
+						icon_container.Role = 5
+					end
+				else
+					icon_container:Remove()
+				end
+			end
+		end
+
+		if not IsValid(voter) then
+			self.Voters[voter] = nil
+		end
+	end
+end
+
+function PANEL:GetPlayerIcon(ply, role)
+	-- use current icon on role button
+	for voter, tbl in pairs(self.Voters) do
+		if voter == ply then
+			for _, icon_container in ipairs(tbl) do
+				if icon_container.Role == role then
+					return icon_container
+				end
+			end
+		end
+	end
+
+	-- use available icon on unvoted button
+	for voter, tbl in pairs(self.Voters) do
+		if voter == ply then
+			for _, icon_container in ipairs(tbl) do
+				if icon_container.Role == 5 then
+					return icon_container
+				end
+			end
+		end
+	end
+
+	-- use only one icon if there is just one vote per player
+	for voter, tbl in pairs(self.Voters) do
+		if #tbl == 1 and voter == ply then
+			return tbl[1]
+		end
+	end
+
+	return false
+end
+
+function PANEL:GetRoleButton(role)
 	for _, v in pairs(self.roleList:GetItems()) do
 		if v.ID == role then
 			return v
@@ -378,50 +520,76 @@ function PANEL:Paint()
 	surface.DrawRect(0, 0, ScrW(), ScrH())
 end
 
-function PANEL:Flash(role)
+function PANEL:Flash(roles)
 	self:SetVisible(true)
 
-	local bar = self:GetMapButton(role)
+	local bars = {}
 	local panel = self
 
-	if IsValid(bar) then
-		timer.Simple(0.0, function()
-			bar.bgColor = bar.color
-			bar.mainColor = bar.color
+	for _, role in ipairs(roles) do
+		local bar = self:GetRoleButton(role)
 
-			surface.PlaySound("hl1/fvox/blip.wav")
-		end)
-
-		timer.Simple(0.2, function()
-			bar.bgColor = Color(255, 255, 255, 255)
-			bar.mainColor = Color(255, 255, 255, 255)
-		end)
-
-		timer.Simple(0.4, function()
-			bar.bgColor = bar.color
-			bar.mainColor = bar.color
-
-			surface.PlaySound("hl1/fvox/blip.wav")
-		end)
-
-		timer.Simple(0.6, function()
-			bar.bgColor = Color(255, 255, 255, 255)
-			bar.mainColor = Color(255, 255, 255, 255)
-		end)
-
-		timer.Simple(0.8, function()
-			bar.bgColor = bar.color
-			bar.mainColor = bar.color
-
-			surface.PlaySound("hl1/fvox/blip.wav")
-		end)
-
-		timer.Simple(2.0, function()
-			if IsValid(panel) then
-				panel:SetVisible(false)
-			end
-		end)
+		if IsValid(bar) then
+			bars[#bars + 1] = bar
+		end
 	end
+
+	timer.Simple(0.0, function()
+		for _, bar in ipairs(bars) do
+			if IsValid(bar) then
+				bar.bgColor = bar.color
+				bar.mainColor = bar.color
+			end
+		end
+
+		surface.PlaySound("hl1/fvox/blip.wav")
+	end)
+
+	timer.Simple(0.2, function()
+		for _, bar in ipairs(bars) do
+			if IsValid(bar) then
+				bar.bgColor = Color(255, 255, 255, 255)
+				bar.mainColor = Color(255, 255, 255, 255)
+			end
+		end
+	end)
+
+	timer.Simple(0.4, function()
+		for _, bar in ipairs(bars) do
+			if IsValid(bar) then
+				bar.bgColor = bar.color
+				bar.mainColor = bar.color
+			end
+		end
+
+		surface.PlaySound("hl1/fvox/blip.wav")
+	end)
+
+	timer.Simple(0.6, function()
+		for _, bar in ipairs(bars) do
+			if IsValid(bar) then
+				bar.bgColor = Color(255, 255, 255, 255)
+				bar.mainColor = Color(255, 255, 255, 255)
+			end
+		end
+	end)
+
+	timer.Simple(0.8, function()
+		for _, bar in ipairs(bars) do
+			if IsValid(bar) then
+				bar.bgColor = bar.color
+				bar.mainColor = bar.color
+			end
+		end
+
+		surface.PlaySound("hl1/fvox/blip.wav")
+	end)
+
+	timer.Simple(3.0, function()
+		if IsValid(panel) then
+			panel:SetVisible(false)
+		end
+	end)
 end
 
 derma.DefineControl("RoleVoteScreen", "", PANEL, "DPanel")
@@ -441,6 +609,9 @@ hook.Add("TTTUlxModifySettings", "TTT2RoleVoteModifySettings", function(name)
 
 	local tttrsdh = xlib.makecheckbox{label = "Enable the RoleVoting (Def. 1)", repconvar = "rep_ttt2_rolevote_enabled", parent = tttrslst}
 	tttrslst:AddItem(tttrsdh)
+
+	local tttrsdh2 = xlib.makeslider{label = "Amount of Votes (Def. 1)", min = 1, max = 32, repconvar = "rep_ttt2_rolevote_votes", parent = tttrslst}
+	tttrslst:AddItem(tttrsdh2)
 
 	xgui.hookEvent("onProcessModules", nil, tttrspnl.processModules)
 	xgui.addSubModule("RoleVote", tttrspnl, nil, name)
