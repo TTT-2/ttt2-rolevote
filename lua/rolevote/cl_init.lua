@@ -1,4 +1,5 @@
 surface.CreateFont("TTT2VoteFont", { font = "Trebuchet MS", size = 19, weight = 700, antialias = true, shadow = true})
+surface.CreateFont("TTT2VoteFontNeed", { font = "Trebuchet MS", size = 20, weight = 700, antialias = true})
 surface.CreateFont("TTT2VoteFontCountdown", {font = "Tahoma", size = 32, weight = 700, antialias = true, shadow = true})
 surface.CreateFont("TTT2VoteSysButton", {font = "Marlett", size = 13, weight = 0, symbol = true})
 
@@ -234,46 +235,70 @@ end
 function PANEL:SetRoles(roles)
 	self.roleList:Clear()
 
+	local ply_count = 0
+
+	for _, v in ipairs(player.GetAll()) do
+
+		-- everyone on the spec team is in specmode
+		if IsValid(v) and not v:GetForceSpec() then
+			ply_count = ply_count + 1
+		end
+	end
+
 	for _, role in RandomPairs(roles) do
 		local button = vgui.Create("DButton", self.roleList)
 		button.ID = role
 
-		button:SetText(LANG.GetTranslation(GetRoleByIndex(role).name))
-
-		button.DoClick = function()
-			net.Start("TTT2RoleVoteUpdate")
-			net.WriteUInt(RoleVote.UPDATE_VOTE, 3)
-			net.WriteUInt(button.ID, ROLE_BITS)
-			net.SendToServer()
-		end
-
 		local rd = GetRoleByIndex(role)
+
+		button:SetText(LANG.GetTranslation(rd.name))
 
 		button.bgColor = table.Copy(rd.color)
 		button.color = table.Copy(rd.color)
 		button.dkColor = table.Copy(rd.dkcolor)
 		button.bgbgColor = table.Copy(rd.bgcolor)
 		button.icon = "vgui/ttt/sprite_" .. rd.abbr
+		button.minPlayers = GetConVar("rep_ttt_" .. rd.name .. "_min_players"):GetInt()
+
+		if ply_count < button.minPlayers then
+			button.disabled = true
+		end
+
+		button.DoClick = function(btn)
+			if not btn.disabled then
+				net.Start("TTT2RoleVoteUpdate")
+				net.WriteUInt(RoleVote.UPDATE_VOTE, 3)
+				net.WriteUInt(button.ID, ROLE_BITS)
+				net.SendToServer()
+			end
+		end
 
 		do
 			local Paint = button.Paint
 			button.Paint = function(s, w, h)
 				local col = Color(255, 255, 255, 10)
 
-				if button.bgColor then
-					col = button.bgColor
+				if s.disabled then
+					col = Color(0, 0, 0, 255)
+				elseif s.bgColor then
+					col = s.bgColor
 				end
 
 				draw.RoundedBox(4, 0, 0, w, h, col)
 
-				if button.icon then
-					local mat = Material(button.icon)
+				if s.icon then
+					local mat = Material(s.icon)
 
 					if mat then
 						surface.SetDrawColor(255, 255, 255, 255)
 						surface.SetMaterial(mat)
 						surface.DrawTexturedRect(5, 5, h - 10, h - 10)
 					end
+				end
+
+				if s.disabled then
+					-- draw player amount
+					draw.DrawText(ply_count .. " / " .. s.minPlayers .. " Players", "TTT2VoteFontNeed", s:GetWide() - 21, 7, Color(255, 0, 0, 255), TEXT_ALIGN_RIGHT)
 				end
 
 				Paint(s, w, h)
