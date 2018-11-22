@@ -134,6 +134,10 @@ function RoleVote.Start(length, current, limit, prefix, mapvote)
 
 	RoleVote.MaxVotes = rolevote_votes:GetInt()
 
+	if RoleVote.MaxVotes > #vote_roles then
+		RoleVote.MaxVotes = #vote_roles
+	end
+
 	net.Start("TTT2RoleVoteStart")
 	net.WriteUInt(amt, ROLE_BITS)
 
