@@ -1,4 +1,4 @@
-surface.CreateFont("TTT2VoteFont", { font = "Trebuchet MS", size = 19, weight = 700, antialias = true, shadow = true})
+surface.CreateFont("TTT2VoteFont", { font = "Trebuchet MS", size = 19, weight = 700, antialias = true})
 surface.CreateFont("TTT2VoteFontNeed", { font = "Trebuchet MS", size = 20, weight = 700, antialias = true})
 surface.CreateFont("TTT2VoteFontCountdown", {font = "Tahoma", size = 32, weight = 700, antialias = true, shadow = true})
 surface.CreateFont("TTT2VoteSysButton", {font = "Marlett", size = 13, weight = 0, symbol = true})
@@ -120,6 +120,7 @@ function PANEL:PerformLayout()
 	self:SetSize(ScrW(), ScrH())
 
 	local extra = math.Clamp(300, 0, ScrW() - 640)
+
 	self.Canvas:StretchToParent(0, 0, 0, 0)
 	self.Canvas:SetWide(640 + extra)
 	self.Canvas:SetTall(cy - 60)
@@ -142,7 +143,6 @@ function PANEL:PerformLayout()
 	self.minimButton:SetPos(buttonPos - 31 * 2, 4)
 	self.minimButton:SetSize(31, 31)
 	self.minimButton:SetVisible(true)
-
 end
 
 local star_mat = Material("icon16/star.png")
@@ -245,22 +245,44 @@ function PANEL:SetRoles(roles)
 		end
 	end
 
+	local tmpTbl = {}
+
 	for _, role in RandomPairs(roles) do
+		tmpTbl[#tmpTbl + 1] = role
+	end
+
+	tmpTbl[#tmpTbl + 1] = 3 -- random
+	tmpTbl[#tmpTbl + 1] = 4 -- none
+
+	for _, role in ipairs(tmpTbl) do
 		local button = vgui.Create("DButton", self.roleList)
 		button.ID = role
 
-		local rd = GetRoleByIndex(role)
+		if role == 3 or role == 4 then
+			if role == 3 then
+				button.title = "Random"
+			else
+				button.title = "None"
+			end
 
-		button:SetText(LANG.GetTranslation(rd.name))
+			local tmpCol = Color(150, 150, 150, 255)
 
-		button.bgColor = table.Copy(rd.color)
-		button.color = table.Copy(rd.color)
-		button.dkColor = table.Copy(rd.dkcolor)
-		button.bgbgColor = table.Copy(rd.bgcolor)
-		button.icon = "vgui/ttt/sprite_" .. rd.abbr
-		button.minPlayers = GetConVar("rep_ttt_" .. rd.name .. "_min_players"):GetInt()
+			button.color = tmpCol
+			button.bgColor = tmpCol
+		else
+			local rd = GetRoleByIndex(role)
 
-		if ply_count < button.minPlayers then
+			button.bgColor = table.Copy(rd.color)
+			button.color = table.Copy(rd.color)
+			button.dkColor = table.Copy(rd.dkcolor)
+			button.icon = "vgui/ttt/sprite_" .. rd.abbr
+			button.minPlayers = GetConVar("rep_ttt_" .. rd.name .. "_min_players"):GetInt()
+			button.title = LANG.GetTranslation(rd.name)
+		end
+
+		button.mainColor = Color(255, 255, 255, 255)
+
+		if button.minPlayers and ply_count < button.minPlayers then
 			button.disabled = true
 		end
 
@@ -276,21 +298,38 @@ function PANEL:SetRoles(roles)
 		do
 			local Paint = button.Paint
 			button.Paint = function(s, w, h)
-				local col = Color(255, 255, 255, 10)
+				local col = button.color
+				local col2
 
 				if s.disabled then
-					col = Color(0, 0, 0, 255)
+					col = Color(100, 100, 100, 255)
 				elseif s.bgColor then
-					col = s.bgColor
+					col = s.mainColor
+					col2 = s.bgColor
+				else
+					col2 = s.bgColor
 				end
 
 				draw.RoundedBox(4, 0, 0, w, h, col)
+
+				-- progress
+				if not s.disabled then
+					local progress = s.NumVotes / ply_count
+					local w2 = w * progress
+
+					draw.RoundedBox(4, w - w2, 0, w2, h, col2)
+				end
 
 				if s.icon then
 					local mat = Material(s.icon)
 
 					if mat then
-						surface.SetDrawColor(255, 255, 255, 255)
+						if not s.disabled then
+							surface.SetDrawColor(255, 255, 255, 255)
+						else
+							surface.SetDrawColor(100, 100, 100, 255)
+						end
+
 						surface.SetMaterial(mat)
 						surface.DrawTexturedRect(5, 5, h - 10, h - 10)
 					end
@@ -298,14 +337,15 @@ function PANEL:SetRoles(roles)
 
 				if s.disabled then
 					-- draw player amount
-					draw.DrawText(ply_count .. " / " .. s.minPlayers .. " Players", "TTT2VoteFontNeed", s:GetWide() - 21, 7, Color(255, 0, 0, 255), TEXT_ALIGN_RIGHT)
+					draw.DrawText(ply_count .. " / " .. s.minPlayers .. " Players", "TTT2VoteFontNeed", s:GetWide() - 21, 10, Color(255, 255, 255, 255), TEXT_ALIGN_RIGHT)
 				end
 
 				Paint(s, w, h)
 			end
 		end
 
-		button:SetTextColor(color_white)
+		button:SetTextColor(color_black)
+		button:SetText(button.title)
 		button:SetContentAlignment(4)
 		button:SetTextInset(48, 0)
 		button:SetFont("TTT2VoteFont")
@@ -313,7 +353,7 @@ function PANEL:SetRoles(roles)
 		local extra = math.Clamp(300, 0, ScrW() - 640)
 
 		button:SetPaintBackground(false)
-		button:SetTall(34)
+		button:SetTall(45)
 		button:SetWide(285 + extra * 0.5)
 		button:SetTooltip(LANG.GetTranslation("ttt2_desc_" .. GetRoleByIndex(role).name))
 
@@ -321,90 +361,6 @@ function PANEL:SetRoles(roles)
 
 		self.roleList:AddItem(button)
 	end
-
-	-- random option
-	local button = vgui.Create("DButton", self.roleList)
-	button.ID = 3
-
-	button:SetText("Random")
-
-	button.DoClick = function()
-		net.Start("TTT2RoleVoteUpdate")
-		net.WriteUInt(RoleVote.UPDATE_VOTE, 3)
-		net.WriteUInt(button.ID, ROLE_BITS)
-		net.SendToServer()
-	end
-
-	do
-		local Paint = button.Paint
-		button.Paint = function(s, w, h)
-			local col = Color(255, 255, 255, 10)
-
-			if button.bgColor then
-				col = button.bgColor
-			end
-
-			draw.RoundedBox(4, 0, 0, w, h, col)
-			Paint(s, w, h)
-		end
-	end
-
-	button:SetTextColor(color_white)
-	button:SetContentAlignment(4)
-	button:SetTextInset(48, 0)
-	button:SetFont("TTT2VoteFont")
-
-	local extra = math.Clamp(300, 0, ScrW() - 640)
-
-	button:SetPaintBackground(false)
-	button:SetTall(34)
-	button:SetWide(285 + extra * 0.5)
-	button:SetTooltip("Select a random role")
-
-	button.NumVotes = 0
-
-	self.roleList:AddItem(button)
-
-	-- none option
-	local buttonN = vgui.Create("DButton", self.roleList)
-	buttonN.ID = 4
-
-	buttonN:SetText("None")
-
-	buttonN.DoClick = function()
-		net.Start("TTT2RoleVoteUpdate")
-		net.WriteUInt(RoleVote.UPDATE_VOTE, 3)
-		net.WriteUInt(buttonN.ID, ROLE_BITS)
-		net.SendToServer()
-	end
-
-	do
-		local Paint = buttonN.Paint
-		buttonN.Paint = function(s, w, h)
-			local col = Color(255, 255, 255, 10)
-
-			if buttonN.bgColor then
-				col = buttonN.bgColor
-			end
-
-			draw.RoundedBox(4, 0, 0, w, h, col)
-			Paint(s, w, h)
-		end
-	end
-
-	buttonN:SetTextColor(color_white)
-	buttonN:SetContentAlignment(4)
-	buttonN:SetTextInset(48, 0)
-	buttonN:SetFont("TTT2VoteFont")
-
-	buttonN:SetPaintBackground(false)
-	buttonN:SetTall(34)
-	buttonN:SetWide(285 + extra * 0.5)
-	buttonN:SetTooltip("Select no custom role")
-
-	buttonN.NumVotes = 0
-
-	self.roleList:AddItem(buttonN)
 end
 
 function PANEL:GetMapButton(role)
@@ -430,33 +386,34 @@ function PANEL:Flash(role)
 
 	if IsValid(bar) then
 		timer.Simple(0.0, function()
-			bar.bgColor = bar.bgbgColor or Color(0, 255, 255)
+			bar.bgColor = bar.color
+			bar.mainColor = bar.color
 
 			surface.PlaySound("hl1/fvox/blip.wav")
 		end)
 
 		timer.Simple(0.2, function()
-			bar.bgColor = bar.color
+			bar.bgColor = Color(255, 255, 255, 255)
+			bar.mainColor = Color(255, 255, 255, 255)
 		end)
 
 		timer.Simple(0.4, function()
-			bar.bgColor = bar.bgbgColor or Color(0, 255, 255)
+			bar.bgColor = bar.color
+			bar.mainColor = bar.color
 
 			surface.PlaySound("hl1/fvox/blip.wav")
 		end)
 
 		timer.Simple(0.6, function()
-			bar.bgColor = bar.color
+			bar.bgColor = Color(255, 255, 255, 255)
+			bar.mainColor = Color(255, 255, 255, 255)
 		end)
 
 		timer.Simple(0.8, function()
-			bar.bgColor = bar.bgbgColor or Color(0, 255, 255)
+			bar.bgColor = bar.color
+			bar.mainColor = bar.color
 
 			surface.PlaySound("hl1/fvox/blip.wav")
-		end)
-
-		timer.Simple(1.0, function()
-			bar.bgColor = bar.dkColor
 		end)
 
 		timer.Simple(2.0, function()
