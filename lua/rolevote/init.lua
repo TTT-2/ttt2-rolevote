@@ -39,18 +39,29 @@ function RoleVote.EndTimer(mapvote)
 
 	local winners = {}
 	local sorted = {}
+	local results = 0
 
-	table.sort(role_results, function(a, b)
-		return a > b
-	end)
+	for k, v in pairs(role_results) do
+		if not v then
+			table.remove(role_results, k)
+		else
+			results = results + 1
+		end
+	end
 
-	local count = 0
+	if results > 0 then
+		table.sort(role_results, function(a, b)
+			return a > b
+		end)
 
-	for role, amount in pairs(role_results) do
-		sorted[#sorted + 1] = role
-		count = count + 1
+		local count = 0
 
-		if count == RoleVote.MaxVotes then break end
+		for role, amount in pairs(role_results) do
+			sorted[#sorted + 1] = role
+			count = count + 1
+
+			if count == RoleVote.MaxVotes then break end
+		end
 	end
 
 	for i = 1, RoleVote.MaxVotes do
@@ -64,6 +75,16 @@ function RoleVote.EndTimer(mapvote)
 
 					break
 				end
+			end
+		end
+
+		if winner == 4 then
+			if #winners == 0 then -- none is #1 winner, don't select other roles
+				winners[1] = winner
+
+				break
+			else
+				continue
 			end
 		end
 

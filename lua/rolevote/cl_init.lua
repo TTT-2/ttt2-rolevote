@@ -301,7 +301,8 @@ function PANEL:Think()
 							bar.NumVotes = bar.NumVotes + 1
 						end
 
-						local NewPos = Vector((bar.x + bar:GetWide()) - 21 * bar.NumVotes - 2, bar.y + (bar:GetTall() * 0.5 - 10), 0)
+						local mul = math.floor((bar.NumVotes + 1) / 2)
+						local NewPos = Vector(bar.x + bar:GetWide() - 21 * mul - 2, bar.y + ((bar.NumVotes + 1) % 2 == 1 and (bar:GetTall() * 0.5) or 0), 0)
 
 						if not icon_container.CurPos or icon_container.CurPos ~= NewPos then
 							icon_container:MoveTo(NewPos.x, NewPos.y, 0.3)
@@ -348,14 +349,18 @@ function PANEL:SetRoles(roles, ply_count)
 			button.color = tmpCol
 			button.bgColor = tmpCol
 			button.mainColor = Color(255, 255, 255, 255)
+			button.selCol = Color(0, 150, 150, 255)
 
 			if role == 3 then
 				button.title = "Random"
+				button.ttip = "Select a random role"
 			elseif role == 4 then
 				button.title = "None"
+				button.ttip = "Don't select any role"
 			else
 				button.title = "Unvoted"
 				button.mainColor = button.color
+				button.ttip = "Don't vote"
 			end
 		else
 			local rd = GetRoleByIndex(role)
@@ -363,10 +368,12 @@ function PANEL:SetRoles(roles, ply_count)
 			button.bgColor = table.Copy(rd.color)
 			button.color = table.Copy(rd.color)
 			button.dkColor = table.Copy(rd.dkcolor)
+			button.selCol = table.Copy(rd.bgcolor)
 			button.mainColor = Color(255, 255, 255, 255)
 			button.icon = "vgui/ttt/sprite_" .. rd.abbr
 			button.minPlayers = GetConVar("rep_ttt_" .. rd.name .. "_min_players"):GetInt()
 			button.title = LANG.GetTranslation(rd.name)
+			button.ttip = LANG.GetTranslation("ttt2_desc_" .. rd.name)
 		end
 
 		if button.minPlayers and ply_count < button.minPlayers then
@@ -407,6 +414,19 @@ function PANEL:SetRoles(roles, ply_count)
 					draw.RoundedBox(4, w - w2, 0, w2, h, col2)
 				end
 
+				-- selected
+				if s.ID ~= 5 then
+					local panel = RoleVote.Panel
+
+					if IsValid(panel) then
+						local btn = panel:GetPlayerIcon(LocalPlayer(), s.ID, true)
+
+						if IsValid(btn) then -- button is selected
+							draw.RoundedBox(4, 0, 0, 5, h, s.selCol)
+						end
+					end
+				end
+
 				if s.icon then
 					local mat = Material(s.icon)
 
@@ -442,7 +462,7 @@ function PANEL:SetRoles(roles, ply_count)
 		button:SetPaintBackground(false)
 		button:SetTall(45)
 		button:SetWide(285 + extra * 0.5)
-		button:SetTooltip(LANG.GetTranslation("ttt2_desc_" .. GetRoleByIndex(role).name))
+		button:SetTooltip(button.ttip)
 
 		button.NumVotes = 0
 
@@ -472,7 +492,7 @@ function PANEL:UnvoteAll(ply)
 	end
 end
 
-function PANEL:GetPlayerIcon(ply, role)
+function PANEL:GetPlayerIcon(ply, role, state)
 	-- use current icon on role button
 	for voter, tbl in pairs(self.Voters) do
 		if voter == ply then
@@ -484,21 +504,23 @@ function PANEL:GetPlayerIcon(ply, role)
 		end
 	end
 
-	-- use available icon on unvoted button
-	for voter, tbl in pairs(self.Voters) do
-		if voter == ply then
-			for _, icon_container in ipairs(tbl) do
-				if icon_container.Role == 5 then
-					return icon_container
+	if not state then
+		-- use available icon on unvoted button
+		for voter, tbl in pairs(self.Voters) do
+			if voter == ply then
+				for _, icon_container in ipairs(tbl) do
+					if icon_container.Role == 5 then
+						return icon_container
+					end
 				end
 			end
 		end
-	end
 
-	-- use only one icon if there is just one vote per player
-	for voter, tbl in pairs(self.Voters) do
-		if #tbl == 1 and voter == ply then
-			return tbl[1]
+		-- use only one icon if there is just one vote per player
+		for voter, tbl in pairs(self.Voters) do
+			if #tbl == 1 and voter == ply then
+				return tbl[1]
+			end
 		end
 	end
 
