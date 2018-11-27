@@ -115,7 +115,13 @@ function RoleVote.EndTimer(mapvote)
 end
 
 function RoleVote.Start(length, current, limit, prefix, mapvote)
-	if not rolevote_enabled:GetBool() then return end
+	if not rolevote_enabled:GetBool() then
+		if mapvote and MapVote and MapVote.Start then
+			MapVote.Start(nil, nil, nil, nil)
+		end
+
+		return
+	end
 
 	length = length or RoleVote.Config.TimeLimit or 28
 	limit = limit or RoleVote.Config.RoleLimit or 24 -- TODO ConVar
@@ -151,7 +157,13 @@ function RoleVote.Start(length, current, limit, prefix, mapvote)
 		end
 	end
 
-	if #vote_roles < 1 then return end
+	if #vote_roles < 1 then
+		if mapvote and MapVote and MapVote.Start then
+			MapVote.Start(nil, nil, nil, nil)
+		end
+
+		return
+	end
 
 	RoleVote.MaxVotes = rolevote_votes:GetInt()
 
