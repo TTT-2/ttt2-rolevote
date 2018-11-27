@@ -16,7 +16,7 @@ end)
 
 RoleVote.Continued = false
 
-function RoleVote.EndTimer(mapvote)
+function RoleVote.EndTimer(mapchange)
 	RoleVote.Allow = false
 
 	local role_results = {}
@@ -108,16 +108,24 @@ function RoleVote.EndTimer(mapvote)
 	timer.Simple(3, function()
 		hook.Run("RoleVoteChange", winners)
 
-		if mapvote and MapVote and MapVote.Start then
-			MapVote.Start(nil, nil, nil, nil)
+		if mapchange then
+			if MapVote and MapVote.Start then
+				MapVote.Start(nil, nil, nil, nil)
+			else
+				timer.Simple(0, game.LoadNextMap)
+			end
 		end
 	end)
 end
 
-function RoleVote.Start(length, current, limit, prefix, mapvote)
+function RoleVote.Start(length, current, limit, prefix, mapchange)
 	if not rolevote_enabled:GetBool() then
-		if mapvote and MapVote and MapVote.Start then
-			MapVote.Start(nil, nil, nil, nil)
+		if mapchange then
+			if MapVote and MapVote.Start then
+				MapVote.Start(nil, nil, nil, nil)
+			else
+				timer.Simple(15, game.LoadNextMap)
+			end
 		end
 
 		return
@@ -158,8 +166,12 @@ function RoleVote.Start(length, current, limit, prefix, mapvote)
 	end
 
 	if #vote_roles < 1 then
-		if mapvote and MapVote and MapVote.Start then
-			MapVote.Start(nil, nil, nil, nil)
+		if mapchange then
+			if MapVote and MapVote.Start then
+				MapVote.Start(nil, nil, nil, nil)
+			else
+				timer.Simple(15, game.LoadNextMap)
+			end
 		end
 
 		return
@@ -187,7 +199,7 @@ function RoleVote.Start(length, current, limit, prefix, mapvote)
 	RoleVote.Votes = {}
 
 	timer.Create("TTT2RoleVote", length, 1, function()
-		RoleVote.EndTimer(mapvote)
+		RoleVote.EndTimer(mapchange)
 	end)
 end
 
