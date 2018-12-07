@@ -370,7 +370,7 @@ function PANEL:SetRoles(roles, ply_count)
 			button.dkColor = table.Copy(rd.dkcolor)
 			button.selCol = table.Copy(rd.bgcolor)
 			button.mainColor = Color(255, 255, 255, 255)
-			button.icon = "vgui/ttt/sprite_" .. rd.abbr
+			button.icon = "vgui/ttt/dynamic/icon_" .. rd.abbr
 			button.minPlayers = GetConVar("rep_ttt_" .. rd.name .. "_min_players"):GetInt()
 			button.title = LANG.GetTranslation(rd.name)
 			button.ttip = LANG.GetTranslation("ttt2_desc_" .. rd.name)
@@ -432,13 +432,12 @@ function PANEL:SetRoles(roles, ply_count)
 
 					if mat then
 						if not s.disabled then
-							surface.SetDrawColor(255, 255, 255, 255)
+							color = Color(255, 255, 255, 255)
 						else
-							surface.SetDrawColor(100, 100, 100, 255)
+							color = Color(100, 100, 100, 255)
 						end
 
-						surface.SetMaterial(mat)
-						surface.DrawTexturedRect(5, 5, h - 10, h - 10)
+						DrawHudIcon(5, 5, h - 10, h - 10, mat, color)
 					end
 				end
 
