@@ -1,4 +1,5 @@
 local CATEGORY_NAME = "RoleVote"
+
 ------------------------------ VoteMap ------------------------------
 function AMB_rolevote(calling_ply, votetime, should_cancel)
 	if not should_cancel then

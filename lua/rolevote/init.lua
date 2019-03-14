@@ -9,7 +9,7 @@ local rolevote_enabled = CreateConVar("ttt2_rolevote_enabled", "1", {FCVAR_NOTIF
 local rolevote_votes = CreateConVar("ttt2_rolevote_votes", "1", {FCVAR_NOTIFY, FCVAR_ARCHIVE})
 local lastrole = CreateConVar("ttt2_rolevote_lastrole", "0", {FCVAR_ARCHIVE})
 
-hook.Add("TTTUlxInitRWCVar", "TTT2RoleVoteInitRWCVar", function(name)
+hook.Add("TTTUlxInitCustomCVar", "TTT2RoleVoteInitRWCVar", function(name)
 	ULib.replicatedWritableCvar("ttt2_rolevote_enabled", "rep_ttt2_rolevote_enabled", rolevote_enabled:GetInt(), true, false, name)
 	ULib.replicatedWritableCvar("ttt2_rolevote_votes", "rep_ttt2_rolevote_votes", rolevote_votes:GetInt(), true, false, name)
 end)
@@ -69,7 +69,7 @@ function RoleVote.EndTimer(mapchange)
 
 		-- random role
 		if winner == 3 then
-			for _, role in RandomPairs(GetRoles()) do
+			for _, role in RandomPairs(roles.GetList()) do
 				if IsRoleSelectable(role, true) and role ~= INNOCENT and role ~= TRAITOR then
 					winner = role.index
 
@@ -134,7 +134,7 @@ function RoleVote.Start(length, current, limit, prefix, mapchange)
 	length = length or RoleVote.Config.TimeLimit or 28
 	limit = limit or RoleVote.Config.RoleLimit or 24 -- TODO ConVar
 
-	local roles = GetRoles()
+	local rls = roles.GetList()
 	local vote_roles = {}
 	local vote_roles2 = {}
 	local amt = 0
@@ -150,7 +150,7 @@ function RoleVote.Start(length, current, limit, prefix, mapchange)
 
 	local ply_count = #RoleVote.Voter
 
-	for _, role in RandomPairs(roles) do
+	for _, role in RandomPairs(rls) do
 		if role ~= INNOCENT and role ~= TRAITOR and IsRoleSelectable(role, true) then
 			local tmp = GetConVar("ttt_" .. role.name .. "_min_players"):GetInt()
 
@@ -310,7 +310,7 @@ function SetLastRoles(lastroles)
 			packed = packed .. ","
 		end
 
-		packed = packed .. (role == 4 and "none" or GetRoleByIndex(role).name)
+		packed = packed .. (role == 4 and "none" or roles.GetById(role).name)
 	end
 
 	RunConsoleCommand("ttt2_rolevote_lastrole", packed)

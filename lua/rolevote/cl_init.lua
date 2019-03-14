@@ -124,13 +124,13 @@ net.Receive("TTT2RoleVoteUpdate", function()
 	elseif update_type == RoleVote.UPDATE_WIN then
 		if IsValid(RoleVote.Panel) then
 			local role_amount = net.ReadUInt(ROLE_BITS)
-			local roles = {}
+			local rls = {}
 
 			for i = 1, role_amount do
-				roles[#roles + 1] = net.ReadUInt(ROLE_BITS)
+				rls[#rls + 1] = net.ReadUInt(ROLE_BITS)
 			end
 
-			RoleVote.Panel:Flash(roles)
+			RoleVote.Panel:Flash(rls)
 		end
 	end
 end)
@@ -326,12 +326,12 @@ function PANEL:Think()
 	self.countDown:CenterHorizontal()
 end
 
-function PANEL:SetRoles(roles, ply_count)
+function PANEL:SetRoles(rls, ply_count)
 	self.roleList:Clear()
 
 	local tmpTbl = {}
 
-	for _, role in RandomPairs(roles) do
+	for _, role in RandomPairs(rls) do
 		tmpTbl[#tmpTbl + 1] = role
 	end
 
@@ -363,7 +363,7 @@ function PANEL:SetRoles(roles, ply_count)
 				button.ttip = "Don't vote"
 			end
 		else
-			local rd = GetRoleByIndex(role)
+			local rd = roles.GetById(role)
 
 			button.bgColor = table.Copy(rd.color)
 			button.color = table.Copy(rd.color)
@@ -541,13 +541,13 @@ function PANEL:Paint()
 	surface.DrawRect(0, 0, ScrW(), ScrH())
 end
 
-function PANEL:Flash(roles)
+function PANEL:Flash(rls)
 	self:SetVisible(true)
 
 	local bars = {}
 	local panel = self
 
-	for _, role in ipairs(roles) do
+	for _, role in ipairs(rls) do
 		local bar = self:GetRoleButton(role)
 
 		if IsValid(bar) then
